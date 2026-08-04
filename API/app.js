@@ -494,6 +494,28 @@ async function openDrawer(sep) {
     }
   }
 
+  // itens do pedido não trazem "localizacao" (só existe na separação) — busca e mescla
+  if (source === 'pedido' && sourceSepId) {
+    try {
+      const sepRes = await fetch(`${API_BASE}/separacoes/${sourceSepId}`);
+      if (sepRes.ok) {
+        const sepJson = await sepRes.json();
+        const sepItens = sepJson.itens ?? [];
+        if (Array.isArray(data.itens) && sepItens.length) {
+          data.itens = data.itens.map(item => {
+            const match = sepItens.find(si =>
+              (si.produto?.sku && si.produto.sku === item.produto?.sku) ||
+              (si.produto?.id && si.produto.id === item.produto?.id)
+            );
+            return match?.localizacao ? { ...item, localizacao: match.localizacao } : item;
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[drawer] falha ao mesclar localização', err);
+    }
+  }
+
   const deliveryKey = data.venda?.id ?? data.id ?? data.numeroPedido ?? data.numero;
   if (deliveryKey) {
     data.entrega = data.entrega ?? getDeliveryInfo(deliveryKey);
