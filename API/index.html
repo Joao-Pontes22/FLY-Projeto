@@ -23,7 +23,7 @@
       </a>
       <a href="#" class="nav-item" data-page="separacao">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
-        Separação
+        Pedidos
       </a>
     </nav>
 
@@ -79,69 +79,81 @@
 
     <!-- ══ PAGE: DASHBOARD ══ -->
     <div id="page-dashboard" class="page active">
+
+      <!-- Filtros do dashboard -->
+      <div class="dash-toolbar">
+        <div class="dash-motoboy-wrap">
+          <label class="dash-filter-label">Motoboy</label>
+          <select id="dash-motoboy-filter" class="dash-select">
+            <option value="">Todos</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- KPIs -->
       <div class="dash-kpis">
-        <div class="kpi-card">
-          <div class="kpi-label">Total de pedidos hoje</div>
+        <div class="kpi-card" style="--kpi-color:#2e9fd8">
+          <div class="kpi-label">Pedidos</div>
           <div class="kpi-value" id="kpi-total">—</div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Abertos</div>
-          <div class="kpi-value warn" id="kpi-pend">—</div>
+        <div class="kpi-card" style="--kpi-color:#b45309">
+          <div class="kpi-label">Pendentes</div>
+          <div class="kpi-value s-pendente" id="kpi-pend">—</div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Em andamento</div>
-          <div class="kpi-value accent" id="kpi-sep">—</div>
+        <div class="kpi-card" style="--kpi-color:#1a7aaa">
+          <div class="kpi-label">Em Separação</div>
+          <div class="kpi-value s-separacao" id="kpi-sep">—</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" style="--kpi-color:#15803d">
           <div class="kpi-label">Atendidos</div>
-          <div class="kpi-value ok" id="kpi-separ">—</div>
+          <div class="kpi-value s-entregue" id="kpi-separ">—</div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Faturamento</div>
+        <div class="kpi-card" style="--kpi-color:#b91c1c">
+          <div class="kpi-label">Atrasados</div>
+          <div class="kpi-value s-atrasado" id="kpi-atraso">—</div>
+        </div>
+        <div class="kpi-card" style="--kpi-color:#2e9fd8">
+          <div class="kpi-label">Valor total pedidos</div>
           <div class="kpi-value accent" id="kpi-emb">—</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" style="--kpi-color:#7c3aed">
           <div class="kpi-label">Ticket médio</div>
           <div class="kpi-value accent" id="kpi-ticket">—</div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Atrasados</div>
-          <div class="kpi-value danger" id="kpi-atraso">—</div>
+        <div class="kpi-card" style="--kpi-color:#0f766e">
+          <div class="kpi-label">Total frete</div>
+          <div class="kpi-value accent" id="kpi-frete">—</div>
         </div>
       </div>
 
       <div class="dash-charts">
-        <div class="chart-card chart-big">
-          <div class="chart-title">Faturamento por dia</div>
-          <div class="chart-wrap"><canvas id="chart-vendas-dia"></canvas></div>
+        <div class="chart-card ranking-card">
+          <div class="chart-title">Top 10 produtos mais vendidos</div>
+          <div id="ranking-produtos" class="ranking-list"></div>
         </div>
-        <div class="chart-card">
-          <div class="chart-title">Ticket médio por dia</div>
-          <div class="chart-wrap"><canvas id="chart-ticket-dia"></canvas></div>
-        </div>
-        <div class="chart-card chart-big">
-          <div class="chart-title">Vendas por hora</div>
-          <div class="chart-wrap"><canvas id="chart-hora"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <div class="chart-title">Produtos mais vendidos</div>
-          <div class="chart-wrap"><canvas id="chart-produtos"></canvas></div>
+        <div class="chart-card chart-full">
+          <div class="chart-title">Frete por motoboy</div>
+          <div class="chart-wrap"><canvas id="chart-frete-motoboy"></canvas></div>
         </div>
       </div>
     </div>
 
-    <!-- ══ PAGE: SEPARAÇÃO ══ -->
+    <!-- ══ PAGE: PEDIDOS ══ -->
     <div id="page-separacao" class="page">
       <div class="stats-bar">
         <div class="stat stat-btn active" data-sit="" id="stat-btn-all"><span class="stat-val" id="stat-total">—</span><span class="stat-lbl">Total</span></div>
         <div class="stat-div"></div>
-        <div class="stat stat-btn" data-sit="1" id="stat-btn-1"><span class="stat-val warn" id="stat-pendente">—</span><span class="stat-lbl">Pendentes</span></div>
+        <div class="stat stat-btn" data-sit="1" id="stat-btn-1"><span class="stat-val s-pendente" id="stat-pendente">—</span><span class="stat-lbl">Pendente</span></div>
         <div class="stat-div"></div>
-        <div class="stat stat-btn" data-sit="3" id="stat-btn-3"><span class="stat-val accent" id="stat-andamento">—</span><span class="stat-lbl">Em separação</span></div>
+        <div class="stat stat-btn" data-sit="3" id="stat-btn-3"><span class="stat-val s-separacao" id="stat-andamento">—</span><span class="stat-lbl">Em Separação</span></div>
         <div class="stat-div"></div>
-        <div class="stat stat-btn" data-sit="4" id="stat-btn-4"><span class="stat-val ok" id="stat-concluido">—</span><span class="stat-lbl">Separadas</span></div>
+        <div class="stat stat-btn" data-sit="7" id="stat-btn-7"><span class="stat-val s-pronto" id="stat-pronto">—</span><span class="stat-lbl">Pronto Envio</span></div>
         <div class="stat-div"></div>
-        <div class="stat stat-btn" data-sit="atrasado" id="stat-btn-atrasado"><span class="stat-val danger" id="stat-atrasado">—</span><span class="stat-lbl">Atrasados</span></div>
+        <div class="stat stat-btn" data-sit="5" id="stat-btn-5"><span class="stat-val s-enviada" id="stat-enviado">—</span><span class="stat-lbl">Enviada</span></div>
+        <div class="stat-div"></div>
+        <div class="stat stat-btn" data-sit="6" id="stat-btn-6"><span class="stat-val s-entregue" id="stat-entregue">—</span><span class="stat-lbl">Entregue</span></div>
+        <div class="stat-div"></div>
+        <div class="stat stat-btn" data-sit="atrasado" id="stat-btn-atrasado"><span class="stat-val s-atrasado" id="stat-atrasado">—</span><span class="stat-lbl">Atrasados</span></div>
       </div>
 
       <div class="cards-area">

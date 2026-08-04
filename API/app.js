@@ -3,6 +3,7 @@
 // Ligar API Base = uvicorn Olist.app:app --reload     
 
 const API_BASE  = 'http://localhost:8000';
+const DELIVERY_STORAGE_KEY = 'delivery_info_map';
 const WARN_MIN  = 15;
 const LIMIT_MIN = 20;
 
@@ -16,7 +17,9 @@ const els = {
   statTotal:    document.getElementById('stat-total'),
   statPend:     document.getElementById('stat-pendente'),
   statAnd:      document.getElementById('stat-andamento'),
-  statConc:     document.getElementById('stat-concluido'),
+  statPronto:   document.getElementById('stat-pronto'),
+  statEnviado:  document.getElementById('stat-enviado'),
+  statEntregue: document.getElementById('stat-entregue'),
   statAtrasado: document.getElementById('stat-atrasado'),
   search:     document.getElementById('search-input'),
   btnRefresh: document.getElementById('btn-refresh'),
@@ -41,6 +44,9 @@ let allRows    = [];
 let timerTicks = [];
 let selectedDay = new Date();   // dia filtrado (padrão: hoje)
 selectedDay.setHours(0,0,0,0);
+let motoboyInfoMap = {};
+let currentDrawerData = null;
+let hasLoadedOnce = false; // primeira carga mostra loading; demais atualizam em segundo plano
 
 let calYear  = selectedDay.getFullYear();
 let calMonth = selectedDay.getMonth();
@@ -130,6 +136,74 @@ function parseNumber(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+async function loadMotoboyInfoMap() {
+  try {
+    const res = await fetch(`${API_BASE}/motoboys`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json && typeof json === 'object') {
+        motoboyInfoMap = json;
+      }
+    }
+  } catch (error) {
+    console.warn('[motoboys] falha ao carregar', error);
+  }
+}
+
+function getDeliveryInfoMap() {
+  const raw = localStorage.getItem(DELIVERY_STORAGE_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDeliveryInfoMap(map) {
+  localStorage.setItem(DELIVERY_STORAGE_KEY, JSON.stringify(map));
+}
+
+function getDeliveryInfo(id) {
+  if (!id && id !== 0) return null;
+  const key = String(id);
+  return motoboyInfoMap[key] ?? getDeliveryInfoMap()[key] ?? null;
+}
+
+async function setDeliveryInfo(id, info) {
+  if (!id && id !== 0) return;
+  const key = String(id);
+  const payload = {
+    pedidoId: Number(id),
+    motoboy: String(info.motoboy ?? '').trim(),
+    valorFrete: info.valorFrete ?? null,
+    hora_saida: info.hora_saida ?? null,
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/motoboys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const saved = json?.motoboy ?? info;
+      motoboyInfoMap[key] = { ...(motoboyInfoMap[key] || {}), ...saved };
+    } else {
+      motoboyInfoMap[key] = { ...(motoboyInfoMap[key] || {}), ...info };
+    }
+  } catch (error) {
+    console.warn('[motoboys] falha ao salvar', error);
+    motoboyInfoMap[key] = { ...(motoboyInfoMap[key] || {}), ...info };
+  }
+
+  const map = getDeliveryInfoMap();
+  map[key] = { ...(map[key] || {}), ...info };
+  saveDeliveryInfoMap(map);
+}
+
 function formatCurrency(value) {
   return Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
@@ -175,7 +249,8 @@ function setSelectedDay(d) {
   els.dayInput.value = fmtDayDisplay(d);
   calYear  = d.getFullYear();
   calMonth = d.getMonth();
-  applyFilters();
+  if (currentPage === 'dashboard') renderDashboard();
+  else applyFilters();
 }
 
 // ── Calendar ──────────────────────────────────────────────────────────
@@ -280,6 +355,9 @@ function renderCards(rows) {
     const clientName = String(row.cliente?.nome ?? '');
     const clientNumber = clientName.match(/^\s*(\d+)/)?.[1] || String(row.cliente?.cpfCnpj ?? '').replace(/\D/g, '').slice(0,4) || '—';
     const pedidoNumero = row.venda?.numero ?? row.numeroPedido ?? row.numero ?? row.id ?? '—';
+    const deliveryInfo = getDeliveryInfo(row.venda?.id ?? row.id ?? row.numeroPedido ?? row.numero);
+    const motoboy = deliveryInfo?.motoboy ?? null;
+    const freteValue = parseNumber(row.valorFrete ?? row.venda?.valorFrete ?? deliveryInfo?.valorFrete ?? 0);
 
     const card = document.createElement('div');
     const isFinished = ['4', '7', '5', '6'].includes(sit);
@@ -304,6 +382,8 @@ function renderCards(rows) {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
           Pedido #${pedidoNumero}
         </div>
+        ${motoboy ? `<div class="card-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Motoboy: ${motoboy}</div>` : ''}
+        ${freteValue ? `<div class="card-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Frete: ${formatCurrency(freteValue)}</div>` : ''}
       </div>`;
 
     if (['0','1','3'].includes(sit)) {
@@ -322,19 +402,18 @@ function renderCards(rows) {
     card.addEventListener('click', () => openDrawer(row));
     els.grid.appendChild(card);
 
-    if (dateVal && !['1','6','7'].includes(sit)) {
+    if (['0','1','3'].includes(sit)) {
       const str = String(dateVal);
       const criado = /^\d{4}-\d{2}-\d{2}$/.test(str)
         ? new Date(str.replace(/-/g,'/'))
         : new Date(str);
       const nove = new Date(criado); nove.setHours(9,0,0,0);
       const startTime = (criado < nove ? nove : criado).getTime();
-      timerTicks.push({
-        card,
-        fill:     card.querySelector('.timer-bar-fill'),
-        labelEl:  card.querySelector('.elapsed'),
-        startTime,
-      });
+      const fill = card.querySelector('.timer-bar-fill');
+      const labelEl = card.querySelector('.elapsed');
+      if (fill && labelEl) {
+        timerTicks.push({ card, fill, labelEl, startTime });
+      }
     }
   });
 
@@ -346,6 +425,7 @@ function startTimerLoop() {
   clearInterval(window._timerLoop);
   window._timerLoop = setInterval(() => {
     timerTicks.forEach(({ card, fill, labelEl, startTime }) => {
+      if (!fill || !labelEl) return;
       const min = (Date.now() - startTime) / 60000;
       const pct = Math.min((min / LIMIT_MIN)*100, 100);
       fill.style.width = pct + '%';
@@ -375,6 +455,7 @@ async function openDrawer(sep) {
   if (pedidoId !== null) {
     try {
       const res = await fetch(`${API_BASE}/pedidos/${pedidoId}`);
+      console.log('[drawer] fetch pedido', pedidoId, res.status);
       if (res.ok) {
         const json = await res.json();
         if (json && typeof json === 'object' && !json.mensagem) {
@@ -384,12 +465,19 @@ async function openDrawer(sep) {
           if (sourceSepId !== undefined && sourceSepId !== null) {
             json.__separacaoId = sourceSepId;
           }
+          if (sep.venda?.situacao !== undefined) {
+            json.venda = { ...(json.venda || {}), situacao: sep.venda.situacao, id: sep.venda.id, numero: sep.venda.numero ?? sep.numeroPedido ?? sep.numero };
+          }
           data = json;
           source = 'pedido';
+        } else {
+          console.warn('[drawer] pedido detalhe retornou formato inesperado', json);
         }
+      } else {
+        console.warn('[drawer] falha fetch pedido', pedidoId, res.status);
       }
-    } catch {
-      /* usa dados do card */
+    } catch (err) {
+      console.error('[drawer] erro fetch pedido', pedidoId, err);
     }
   }
 
@@ -398,14 +486,27 @@ async function openDrawer(sep) {
       const fallback = await fetch(`${API_BASE}/separacoes/${separacaoId}`);
       if (fallback.ok) {
         data = await fallback.json();
+      } else {
+        console.warn('[drawer] falha fetch separacao', separacaoId, fallback.status);
       }
-    } catch {
-      /* usa dados do card */
+    } catch (err) {
+      console.error('[drawer] erro fetch separacao', separacaoId, err);
     }
   }
 
+  const deliveryKey = data.venda?.id ?? data.id ?? data.numeroPedido ?? data.numero;
+  if (deliveryKey) {
+    data.entrega = data.entrega ?? getDeliveryInfo(deliveryKey);
+  }
+
   data.__source = source;
-  renderDrawerContent(data);
+  currentDrawerData = data;
+  try {
+    renderDrawerContent(data);
+  } catch (err) {
+    console.error('[drawer] erro renderizando conteudo', err, data);
+    els.drawerBody.innerHTML = `<div class="state-msg" style="height:200px"><p>Erro ao carregar detalhes. Tente novamente.</p></div>`;
+  }
 }
 
 function renderDrawerContent(sep) {
@@ -418,14 +519,15 @@ function renderDrawerContent(sep) {
   const endereco = contato?.endereco ?? null;
   const itens = sep.itens ?? sep.items ?? sep.produtos ?? [];
   const pedidoTotal = parseNumber(sep.valorTotalPedido ?? sep.valorTotal ?? sep.valor ?? 0);
+  const deliveryInfo = getDeliveryInfo(sep.venda?.id ?? sep.id ?? sep.numeroPedido ?? sep.numero);
+  const motoboy = deliveryInfo?.motoboy ?? null;
+  const freteValue = parseNumber(sep.valorFrete ?? sep.venda?.valorFrete ?? deliveryInfo?.valorFrete ?? 0);
 
   els.drawerTitle.textContent = `${numero} — ${nomeCliente}`;
   sep.situacao = sep.situacao ?? sep.venda?.situacao;
   configureDrawerAction(sep);
 
   let html = '';
-
-  // ── Hero (full width) ────────────────────────
   html += `
     <div class="dp-hero">
       <div class="dp-avatar">${nomeCliente.slice(0,2).toUpperCase()}</div>
@@ -436,7 +538,6 @@ function renderDrawerContent(sep) {
       <span class="pill ${cls}">${label}</span>
     </div>`;
 
-  // ── Itens (full width, primeiro) ─────────────
   if (itens.length) {
     html += `<div class="dp-section dp-full">
       <div class="dp-section-title">Itens <span class="dp-count">${itens.length}</span></div>
@@ -451,11 +552,11 @@ function renderDrawerContent(sep) {
         <div class="dp-item-body">
           <div class="dp-item-name">${prod.descricao ?? `Item ${i+1}`}</div>
           <div class="dp-item-tags">
-            ${prod.sku        ? `<span class="dp-tag"><span class="dp-tag-label">SKU</span>${prod.sku}</span>` : ''}
+            ${prod.sku ? `<span class="dp-tag"><span class="dp-tag-label">SKU</span>${prod.sku}</span>` : ''}
             ${quantidade ? `<span class="dp-tag"><span class="dp-tag-label">Qtd</span>${quantidade}${item.unidade ? ' '+item.unidade : ''}</span>` : ''}
             ${unitValue ? `<span class="dp-tag"><span class="dp-tag-label">Valor</span>${formatCurrency(unitValue)}</span>` : ''}
             ${itemTotal ? `<span class="dp-tag"><span class="dp-tag-label">Total</span>${formatCurrency(itemTotal)}</span>` : ''}
-            ${item.localizacao? `<span class="dp-tag"><span class="dp-tag-label">Local</span>${item.localizacao}</span>` : ''}
+            ${item.localizacao ? `<span class="dp-tag"><span class="dp-tag-label">Local</span>${item.localizacao}</span>` : ''}
           </div>
           ${item.infoAdicional ? `<div class="dp-item-info">${item.infoAdicional}</div>` : ''}
         </div>
@@ -464,32 +565,38 @@ function renderDrawerContent(sep) {
     html += '</div></div>';
   }
 
-  // ── Pedido + Cliente (2 colunas) ─────────────
   html += drawerSection('Pedido', [
-    { icon: 'calendar', label: 'Data criação',    val: formatDate(dataVal) },
-    { icon: 'clock',    label: 'Tempo de espera', val: fmtElapsed(elapsedMin(dataVal)) },
-    { icon: 'box',      label: 'Depósito',        val: sep.deposito?.nome ?? null },
-    { icon: 'truck',    label: 'Frete',            val: parseNumber(sep.valorFrete ?? sep.valorFrete ?? 0) > 0 ? formatCurrency(sep.valorFrete) : null },
-    { icon: 'money',    label: 'Valor total',      val: pedidoTotal > 0 ? formatCurrency(pedidoTotal) : null },
+    { icon: 'calendar', label: 'Data criação', val: formatDate(dataVal) },
+    { icon: 'clock', label: 'Tempo de espera', val: fmtElapsed(elapsedMin(dataVal)) },
+    { icon: 'box', label: 'Depósito', val: sep.deposito?.nome ?? null },
+    { icon: 'truck', label: 'Frete', val: freteValue ? formatCurrency(freteValue) : null },
+    { icon: 'money', label: 'Valor total', val: pedidoTotal > 0 ? formatCurrency(pedidoTotal) : null },
   ]);
 
   if (contato) {
     html += drawerSection('Cliente', [
-      { icon: 'user',  label: 'Nome',     val: nomeCliente },
-      { icon: 'phone', label: 'Celular',  val: contato.celular ?? contato.telefone },
-      { icon: 'mail',  label: 'E-mail',   val: contato.email },
-      { icon: 'id',    label: 'CPF/CNPJ', val: contato.cpfCnpj },
+      { icon: 'user', label: 'Nome', val: nomeCliente },
+      { icon: 'phone', label: 'Celular', val: contato.celular ?? contato.telefone },
+      { icon: 'mail', label: 'E-mail', val: contato.email },
+      { icon: 'id', label: 'CPF/CNPJ', val: contato.cpfCnpj },
     ]);
   }
 
-  // ── Endereço (full width se existir) ─────────
+  if (motoboy || freteValue) {
+    html += drawerSection('Entrega', [
+      { icon: 'user', label: 'Motoboy', val: motoboy },
+      { icon: 'truck', label: 'Frete', val: freteValue ? formatCurrency(freteValue) : null },
+      { icon: 'clock', label: 'Saída', val: formatDate(deliveryInfo?.hora_saida) },
+    ]);
+  }
+
   if (endereco) {
     const log = [endereco.endereco, endereco.numero, endereco.complemento].filter(Boolean).join(', ');
     html += drawerSection('Endereço', [
       { icon: 'pin', label: 'Logradouro', val: log || null },
-      { icon: 'pin', label: 'Bairro',     val: endereco.bairro },
-      { icon: 'pin', label: 'Cidade / UF',val: [endereco.municipio, endereco.uf].filter(Boolean).join(' — ') || null },
-      { icon: 'pin', label: 'CEP',        val: endereco.cep },
+      { icon: 'pin', label: 'Bairro', val: endereco.bairro },
+      { icon: 'pin', label: 'Cidade / UF', val: [endereco.municipio, endereco.uf].filter(Boolean).join(' — ') || null },
+      { icon: 'pin', label: 'CEP', val: endereco.cep },
     ], true);
   }
 
@@ -513,7 +620,7 @@ function statusName(situacao) {
 function getSituacaoAction(situacao) {
   const sit = String(situacao ?? '').trim();
   if (sit === '0' || sit === '1') return { label: `Atualizar Status Para ${statusName(3)}`, target: 3 };
-  if (sit === '3') return { label: `Atualizar Status Para ${statusName(4)}`, target: 4 };
+  if (sit === '3') return { label: `Atualizar Status Para ${statusName(7)}`, target: 7 };
   if (sit === '4') return { label: `Atualizar Status Para ${statusName(7)}`, target: 7 };
   if (sit === '7') return { label: `Atualizar Status Para ${statusName(5)}`, target: 5 };
   if (sit === '5') return { label: `Atualizar Status Para ${statusName(6)}`, target: 6 };
@@ -554,36 +661,211 @@ function configureDrawerAction(sep) {
     return;
   }
 
+  const pedidoId = sep.venda?.id ?? sep.id ?? '';
+
   els.drawerAction.textContent = action.label;
   els.drawerAction.classList.remove('hidden', 'success');
   els.drawerAction.disabled = false;
+  els.drawerAction.dataset.formMode = '';
   els.drawerAction.dataset.targetSituacao = String(action.target);
   els.drawerAction.dataset.separacaoId = String(separacaoId);
+  els.drawerAction.dataset.pedidoId = String(pedidoId);
   els.drawerAction.dataset.endpoint = endpoint;
   els.drawerAction.removeEventListener('click', handleDrawerAction);
   els.drawerAction.addEventListener('click', handleDrawerAction);
 }
 
+function renderMotoboyForm(sep, target) {
+  const pedidoId = sep.venda?.id ?? sep.id ?? '';
+  const freteFromPedido = parseNumber(sep.valorFrete ?? sep.venda?.valorFrete ?? sep.transportador?.valorFrete ?? getDeliveryInfo(pedidoId)?.valorFrete ?? 0);
+  const hasFrete = freteFromPedido > 0;
+  const dtNumero = sep.venda?.numero ?? sep.numeroPedido ?? sep.numero ?? sep.id ?? '—';
+
+  els.drawerTitle.textContent = `Enviar Pedido #${dtNumero}`;
+  els.drawerBody.innerHTML = `
+    <div class="dp-section dp-full form-panel">
+      <div class="dp-section-title">Confirmar envio</div>
+      <div class="dp-fields">
+        <div class="dp-field form">
+          <label class="dp-field-label" for="motoboy-name">Motoboy</label>
+          <input id="motoboy-name" class="dp-input" type="text" placeholder="Digite o nome do motoboy" autocomplete="off" />
+        </div>
+        ${hasFrete ? `
+          <div class="dp-field form">
+            <label class="dp-field-label">Frete</label>
+            <div class="dp-field-val dp-value">${formatCurrency(freteFromPedido)}</div>
+          </div>
+        ` : `
+          <div class="dp-field form">
+            <label class="dp-field-label" for="motoboy-frete">Valor do frete</label>
+            <input id="motoboy-frete" class="dp-input" type="text" placeholder="R$ 0,00" autocomplete="off" inputmode="decimal" />
+          </div>
+        `}
+        <div id="motoboy-form-error" class="dp-field-error"></div>
+      </div>
+    </div>`;
+
+  els.drawerAction.textContent = 'Confirmar envio';
+  els.drawerAction.classList.remove('hidden', 'success');
+  els.drawerAction.disabled = false;
+  els.drawerAction.dataset.formMode = 'motoboy';
+  els.drawerAction.dataset.targetSituacao = String(target);
+  els.drawerAction.dataset.separacaoId = String(sep.id ?? sep.__separacaoId ?? '');
+  els.drawerAction.dataset.pedidoId = String(pedidoId);
+  els.drawerAction.dataset.endpoint = sep.__source === 'pedido' ? 'pedidos' : 'separacoes';
+}
+
+function showMotoboyFormError(message) {
+  const errorEl = document.getElementById('motoboy-form-error');
+  if (!errorEl) return;
+  errorEl.style.display = 'block';
+  errorEl.textContent = message;
+}
+
+async function submitMotoboyForm(btn) {
+  const originalText = btn.textContent;
+  const pedidoId = btn.dataset.pedidoId || btn.dataset.separacaoId;
+  const endpoint = btn.dataset.endpoint || 'separacoes';
+  const target = Number(btn.dataset.targetSituacao);
+  const nameInput = document.getElementById('motoboy-name');
+  const freteInput = document.getElementById('motoboy-frete');
+  if (!nameInput) return;
+
+  const motoboy = String(nameInput.value ?? '').trim();
+  if (!motoboy) {
+    showMotoboyFormError('Informe o nome do motoboy');
+    return;
+  }
+
+  let valorFrete = null;
+  if (freteInput) {
+    valorFrete = parseNumber(freteInput.value);
+    if (valorFrete <= 0) {
+      showMotoboyFormError('Informe o valor do frete');
+      return;
+    }
+  } else {
+    valorFrete = parseNumber(currentDrawerData?.valorFrete ?? currentDrawerData?.venda?.valorFrete ?? currentDrawerData?.transportador?.valorFrete ?? getDeliveryInfo(pedidoId)?.valorFrete ?? 0);
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  await setDeliveryInfo(pedidoId, {
+    motoboy,
+    status: 'Enviado',
+    hora_saida: new Date().toISOString(),
+    valorFrete: valorFrete || undefined,
+  });
+
+  try {
+    const payload = { situacao: target };
+    const statusRes = await fetch(`${API_BASE}/${endpoint}/${btn.dataset.separacaoId}/situacao`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!statusRes.ok) throw new Error(`HTTP ${statusRes.status}`);
+
+    if (endpoint === 'pedidos') {
+      const pedidoRes = await fetch(`${API_BASE}/pedidos/${btn.dataset.separacaoId}`);
+      if (pedidoRes.ok) pedidoData = await pedidoRes.json();
+    }
+
+    if (endpoint !== 'pedidos') {
+      await loadSeparacoes();
+    }
+
+    let updated = null;
+    if (endpoint === 'pedidos') {
+      const pedidoMatch = pedidosRows.find(item => String(item.id) === String(btn.dataset.separacaoId));
+      if (pedidoMatch) {
+        pedidoMatch.situacao = target;
+        if (pedidoData) Object.assign(pedidoMatch, pedidoData);
+        updated = pedidoMatch;
+      }
+
+      const separacaoMatches = allRows.filter(item => {
+        const vendaId = item.venda?.id;
+        const numeroPedido = item.numeroPedido ?? item.numero ?? item.venda?.numero ?? item.venda?.numeroPedido;
+        return [vendaId, numeroPedido, item.id, item.idOrigemVinc]
+          .some(value => value !== undefined && value !== null && String(value) === String(btn.dataset.separacaoId));
+      });
+      separacaoMatches.forEach(match => {
+        match.situacao = target;
+        if (pedidoData) {
+          match.venda = { ...match.venda, ...pedidoData, id: match.venda?.id ?? match.venda?.id };
+        }
+        if (!updated) updated = match;
+      });
+    } else {
+      updated = allRows.find(item => String(item.id) === String(btn.dataset.separacaoId));
+      if (updated) updated.situacao = target;
+    }
+
+    if (currentPage === 'separacao') {
+      applyFilters();
+    } else if (currentPage === 'dashboard') {
+      renderDashboard();
+    }
+
+    if (updated) {
+      const currentDrawerPedidoId = els.drawerAction.dataset.pedidoId || btn.dataset.separacaoId;
+      const updatedId = String(updated.id ?? updated.venda?.id ?? updated.numeroPedido ?? updated.numero ?? '');
+      if (currentDrawerPedidoId && currentDrawerPedidoId === updatedId) {
+        renderDrawerContent(updated);
+      }
+    }
+
+    btn.textContent = 'Transferido';
+    btn.classList.add('success');
+    btn.disabled = true;
+    showPopup('Transferência de status realizada com sucesso.');
+
+    setTimeout(() => {
+      btn.classList.remove('success');
+    }, 1400);
+  } catch (error) {
+    console.error('[drawer] falha atualizar situacao', error);
+    btn.classList.remove('success');
+    btn.textContent = 'Falha ao atualizar';
+    btn.disabled = false;
+  }
+}
+
 async function handleDrawerAction(event) {
   const btn = event.currentTarget;
+  if (btn.dataset.formMode === 'motoboy') {
+    await submitMotoboyForm(btn);
+    return;
+  }
+
   const id = btn.dataset.separacaoId;
   const target = Number(btn.dataset.targetSituacao);
   const endpoint = btn.dataset.endpoint || 'separacoes';
   if (!id || !target) return;
 
+  const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Atualizando...';
 
   try {
-    const res = await fetch(`${API_BASE}/${endpoint}/${id}/situacao`, {
+    if (target === 5) {
+      if (currentDrawerData) {
+        renderMotoboyForm(currentDrawerData, target);
+      }
+      btn.disabled = false;
+      return;
+    }
+
+    const payload = { situacao: target };
+    const statusRes = await fetch(`${API_BASE}/${endpoint}/${id}/situacao`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ situacao: target }),
+      body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!statusRes.ok) throw new Error(`HTTP ${statusRes.status}`);
 
-    let updated = null;
-    let pedidoData = null;
     if (endpoint === 'pedidos') {
       const pedidoRes = await fetch(`${API_BASE}/pedidos/${id}`);
       if (pedidoRes.ok) pedidoData = await pedidoRes.json();
@@ -626,7 +908,11 @@ async function handleDrawerAction(event) {
     }
 
     if (updated) {
-      await openDrawer(updated);
+      const currentDrawerPedidoId = els.drawerAction.dataset.pedidoId || btn.dataset.separacaoId;
+      const updatedId = String(updated.id ?? updated.venda?.id ?? updated.numeroPedido ?? updated.numero ?? '');
+      if (currentDrawerPedidoId && currentDrawerPedidoId === updatedId) {
+        renderDrawerContent(updated);
+      }
     }
 
     btn.textContent = 'Transferido';
@@ -696,10 +982,12 @@ function updateStats(items) {
   els.statTotal.textContent    = items.length;
   els.statPend.textContent     = items.filter(i => sit(i) === '1').length;
   els.statAnd.textContent      = items.filter(i => sit(i) === '3').length;
-  els.statConc.textContent     = items.filter(i => sit(i) === '4').length;
+  els.statPronto.textContent   = items.filter(i => sit(i) === '7').length;
+  els.statEnviado.textContent  = items.filter(i => sit(i) === '5').length;
+  els.statEntregue.textContent = items.filter(i => sit(i) === '6').length;
   els.statAtrasado.textContent = items.filter(i => {
     const m = elapsedMin(dataVal(i));
-    return m !== null && m >= LIMIT_MIN && sit(i) !== '2';
+    return m !== null && m >= LIMIT_MIN && ['1', '3'].includes(sit(i));
   }).length;
 }
 
@@ -715,7 +1003,7 @@ function applyFilters() {
     if (activeStatFilter === 'atrasado') {
       const m = elapsedMin(dataVal);
       const s = normalizeSituacao(row.venda?.situacao ?? row.situacao);
-      return m !== null && m >= LIMIT_MIN && !['1','6','7'].includes(s);
+      return m !== null && m >= LIMIT_MIN && ['1', '3'].includes(s);
     }
     if (activeStatFilter !== '') {
       return String(rowSituacao ?? '').trim() === activeStatFilter;
@@ -739,7 +1027,7 @@ let pedidosRows = []; // dados de pedidos — usado só no dashboard
 
 async function loadSeparacoes() {
   els.btnRefresh.classList.add('spinning');
-  if (currentPage === 'separacao') showState('loading');
+  if (currentPage === 'separacao' && !hasLoadedOnce) showState('loading');
   try {
     // ── Separações ────────────────────────────────
     const resSep  = await fetch(`${API_BASE}/separacoes?limit=100`);
@@ -799,16 +1087,24 @@ async function loadSeparacoes() {
       console.warn('[pedidos] erro:', e);
     }
 
+    await loadMotoboyInfoMap();
     updateStats(allRows);
     applyFilters(); // sempre atualiza, showState só renderiza se página estiver ativa
 
     if (currentPage === 'dashboard') renderDashboard();
 
+    hasLoadedOnce = true;
+
   } catch (e) {
     console.error('[separacoes] erro:', e);
     if (currentPage === 'separacao') {
-      els.errorMsg.innerHTML = `Sem conexão com o servidor. <a href="${API_BASE}/login">Fazer login</a>`;
-      showState('error');
+      if (!hasLoadedOnce) {
+        els.errorMsg.innerHTML = `Sem conexão com o servidor. <a href="${API_BASE}/login">Fazer login</a>`;
+        showState('error');
+      } else {
+        // já há dados na tela: falha silenciosa, mantém o cache exibido
+        showPopup('Não foi possível atualizar agora. Exibindo dados anteriores.');
+      }
     }
   } finally {
     els.btnRefresh.classList.remove('spinning');
@@ -825,7 +1121,7 @@ const pages = {
   dashboard: document.getElementById('page-dashboard'),
   separacao: document.getElementById('page-separacao'),
 };
-const pageTitles = { dashboard: 'Dashboard', separacao: 'Separação' };
+const pageTitles = { dashboard: 'Dashboard', separacao: 'Pedidos' };
 const pageTitle  = document.getElementById('page-title');
 let currentPage  = 'dashboard';
 
@@ -834,9 +1130,8 @@ function navigateTo(page) {
   Object.entries(pages).forEach(([k, el]) => el.classList.toggle('active', k === page));
   document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.page === page));
   pageTitle.textContent = pageTitles[page] ?? page;
-  const showControls = page === 'separacao';
-  document.getElementById('day-filter-wrap').style.display = showControls ? '' : 'none';
-  document.getElementById('search-input').closest('.search-wrap').style.display = showControls ? '' : 'none';
+  document.getElementById('day-filter-wrap').style.display = '';
+  document.getElementById('search-input').closest('.search-wrap').style.display = page === 'separacao' ? '' : 'none';
   if (page === 'dashboard') renderDashboard();
   if (page === 'separacao') applyFilters();
 }
@@ -856,140 +1151,150 @@ document.querySelectorAll('.stat-btn').forEach(btn => {
 });
 
 // ── Dashboard ─────────────────────────────────────────────────────────
-let chartVendasDia = null, chartTicketDia = null, chartHora = null, chartProdutos = null;
+let chartFreteMotoboy = null;
+let dashMotoboy = ''; // '' = todos
+let rankingReqId = 0;
+
+function fmtDayISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function renderRankingProdutos(top10) {
+  const rankingEl = document.getElementById('ranking-produtos');
+  if (!rankingEl) return;
+  if (!top10.length) {
+    rankingEl.innerHTML = `<div class="ranking-empty">Nenhum produto vendido no período.</div>`;
+    return;
+  }
+  const maxQty = top10[0][1];
+  rankingEl.innerHTML = top10.map(([name, qty], i) => `
+    <div class="ranking-row">
+      <div class="ranking-rank rank-${i < 3 ? i+1 : 'n'}">${i+1}</div>
+      <div class="ranking-info">
+        <div class="ranking-name" title="${name}">${name}</div>
+        <div class="ranking-bar-bg"><div class="ranking-bar-fill" style="width:${(qty/maxQty*100).toFixed(1)}%"></div></div>
+      </div>
+      <div class="ranking-qty">${qty}</div>
+    </div>`).join('');
+}
+
+async function loadProdutosRanking(dateStr) {
+  const reqId = ++rankingReqId;
+  const rankingEl = document.getElementById('ranking-produtos');
+  if (rankingEl) rankingEl.innerHTML = `<div class="ranking-empty">Carregando…</div>`;
+  try {
+    const res  = await fetch(`${API_BASE}/separacoes/produtos-do-dia?data=${dateStr}`);
+    const data = await res.json();
+    if (reqId !== rankingReqId) return; // dia trocado enquanto buscava, descarta resposta antiga
+    const top10 = (data.produtos ?? []).map(p => [p.descricao, p.quantidade]);
+    renderRankingProdutos(top10);
+  } catch (e) {
+    console.warn('[produtos-do-dia] erro:', e);
+    if (reqId === rankingReqId && rankingEl) {
+      rankingEl.innerHTML = `<div class="ranking-empty">Não foi possível carregar os produtos.</div>`;
+    }
+  }
+}
 
 function renderDashboard() {
-  const pedidos = pedidosRows;
+  const pedidos    = pedidosRows;
   const separacoes = allRows;
-  const todayPedidos = pedidos.filter(p => isSameDay(p.dataCriacao ?? p.data ?? p.dataPedido ?? p.dataVenda, selectedDay));
-  const todaySeparacoes = separacoes.filter(s => isSameDay(s.dataCriacao ?? s.data ?? s.dataPedido ?? s.dataVenda ?? s.data_pedido, selectedDay));
 
-  const total = todayPedidos.length;
-  const valorTotal = todayPedidos.reduce((acc, p) => acc + parseNumber(p.valor ?? p.valorTotalPedido ?? p.valorTotal ?? 0), 0);
-  const ticketMed = total > 0 ? (valorTotal / total) : 0;
+  const rangedPedidos = pedidos.filter(p => isSameDay(p.dataCriacao ?? p.data ?? p.dataPedido ?? p.dataVenda, selectedDay));
+  const rangedSep     = separacoes.filter(s => isSameDay(s.dataCriacao ?? s.data ?? s.dataPedido ?? s.dataVenda ?? s.data_pedido, selectedDay));
 
-  const abertos = todaySeparacoes.filter(s => normalizeSituacao(s.venda?.situacao ?? s.situacao) === '1').length;
-  const andamento = todaySeparacoes.filter(s => normalizeSituacao(s.venda?.situacao ?? s.situacao) === '3').length;
-  const atendidos = todaySeparacoes.filter(s => ['4','5','6','7'].includes(normalizeSituacao(s.venda?.situacao ?? s.situacao))).length;
-  const atrasados = todaySeparacoes.filter(s => {
-    const m = elapsedMin(s.dataCriacao ?? s.data ?? s.dataPedido ?? s.dataVenda ?? s.data_pedido);
-    const status = normalizeSituacao(s.venda?.situacao ?? s.situacao);
-    return m !== null && m >= LIMIT_MIN && status !== '2';
-  }).length;
-
-  const vendasPorDia = {};
-  const ticketPorDia = {};
-  const hourlySales = Array(14).fill(0);
-
-  pedidos.forEach(p => {
-    const dataVal = p.dataCriacao ?? p.data ?? p.dataPedido ?? p.dataVenda;
-    const d = parseDate(dataVal);
-    if (!d) return;
-
-    const valor = parseNumber(p.valor ?? p.valorTotalPedido ?? p.valorTotal ?? 0);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    vendasPorDia[key] = (vendasPorDia[key] || 0) + valor;
-    ticketPorDia[key] = ticketPorDia[key] || { total: 0, count: 0 };
-    ticketPorDia[key].total += valor;
-    ticketPorDia[key].count += 1;
-
-    if (isSameDay(dataVal, selectedDay)) {
-      const hour = d.getHours() - 7;
-      if (hour >= 0 && hour < hourlySales.length) {
-        hourlySales[hour] += valor;
-      }
-    }
-  });
-
-  const produtosCount = new Map();
-  const seenProductKeys = new Set();
-  const pedidoHasItems = pedidos.some(p => Array.isArray(p.itens) && p.itens.length > 0);
-
-  if (pedidoHasItems) {
-    pedidos.forEach(p => {
-      const orderKey = String(p.id ?? p.numeroPedido ?? p.numero ?? '').trim();
-      const items = Array.isArray(p.itens) ? p.itens : Array.isArray(p.items) ? p.items : [];
-      items.forEach(item => {
-        const prod = item.produto ?? item;
-        const label = String(prod.descricao ?? prod.nome ?? prod.sku ?? prod.codigo ?? prod.id ?? 'Desconhecido').trim();
-        if (!label) return;
-        const sku = String(prod.sku ?? prod.codigo ?? prod.id ?? '').trim();
-        const uniqKey = `${orderKey}:${label}:${sku}`;
-        if (seenProductKeys.has(uniqKey)) return;
-        seenProductKeys.add(uniqKey);
-        const qty = parseNumber(item.quantidade ?? item.qty ?? item.qtd ?? item.quant ?? item.quantity ?? 1);
-        produtosCount.set(label, (produtosCount.get(label) || 0) + (qty === 0 ? 1 : qty));
-      });
-    });
-  } else {
-    todaySeparacoes.forEach(s => {
-      const orderKey = String(s.venda?.id ?? s.venda?.numero ?? s.id ?? '').trim();
-      const items = Array.isArray(s.itens) ? s.itens : Array.isArray(s.items) ? s.items : Array.isArray(s.produtos) ? s.produtos : [];
-      items.forEach(item => {
-        const prod = item.produto ?? item;
-        const label = String(prod.descricao ?? prod.nome ?? prod.sku ?? prod.codigo ?? prod.id ?? 'Desconhecido').trim();
-        if (!label) return;
-        const sku = String(prod.sku ?? prod.codigo ?? prod.id ?? '').trim();
-        const uniqKey = `${orderKey}:${label}:${sku}`;
-        if (seenProductKeys.has(uniqKey)) return;
-        seenProductKeys.add(uniqKey);
-        const qty = parseNumber(item.quantidade ?? item.qty ?? item.qtd ?? item.quant ?? item.quantity ?? 1);
-        produtosCount.set(label, (produtosCount.get(label) || 0) + (qty === 0 ? 1 : qty));
-      });
-    });
+  // ── Populate motoboy filter ──────────────────
+  const motoboyNames = new Set(Object.values(motoboyInfoMap).map(m => m.motoboy).filter(Boolean));
+  const select = document.getElementById('dash-motoboy-filter');
+  if (select) {
+    const prev = select.value;
+    select.innerHTML = '<option value="">Todos</option>' +
+      [...motoboyNames].sort().map(n => `<option value="${n}"${n===prev?' selected':''}>${n}</option>`).join('');
+    dashMotoboy = select.value;
   }
 
-  const datas = Object.keys(vendasPorDia).sort();
-  const labels = datas.map(d => {
-    const [year, month, day] = d.split('-');
-    return `${day}/${month}`;
-  });
-  const vendasDia = datas.map(d => vendasPorDia[d]);
-  const ticketDia = datas.map(d => ticketPorDia[d].count ? ticketPorDia[d].total / ticketPorDia[d].count : 0);
+  // ── Motoboy-filtered sets ─────────────────────
+  const filteredSep = dashMotoboy
+    ? rangedSep.filter(s => motoboyInfoMap[String(s.venda?.id ?? s.id ?? '')]?.motoboy === dashMotoboy)
+    : rangedSep;
+  const filteredPed = dashMotoboy
+    ? rangedPedidos.filter(p => motoboyInfoMap[String(p.id ?? p.numeroPedido ?? p.numero ?? '')]?.motoboy === dashMotoboy)
+    : rangedPedidos;
 
-  const produtosTop = Array.from(produtosCount.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6);
+  // ── KPIs ────────────────────────────────────
+  const total      = filteredPed.length;
+  const valorTotal = filteredPed.reduce((a, p) => a + parseNumber(p.valor ?? p.valorTotalPedido ?? p.valorTotal ?? 0), 0);
+  const ticketMed  = total > 0 ? valorTotal / total : 0;
+  const sit        = s => normalizeSituacao(s.venda?.situacao ?? s.situacao);
+  const abertos    = filteredSep.filter(s => sit(s) === '1').length;
+  const andamento  = filteredSep.filter(s => sit(s) === '3').length;
+  const atendidos  = filteredSep.filter(s => ['4','5','6','7'].includes(sit(s))).length;
+  const atrasados  = filteredSep.filter(s => {
+    const m = elapsedMin(s.dataCriacao ?? s.data ?? s.dataPedido ?? s.dataVenda);
+    return m !== null && m >= LIMIT_MIN && ['1','3'].includes(sit(s));
+  }).length;
 
-  document.getElementById('kpi-total').textContent = total;
-  document.getElementById('kpi-pend').textContent = abertos;
-  document.getElementById('kpi-sep').textContent = andamento;
-  document.getElementById('kpi-separ').textContent = atendidos;
-  document.getElementById('kpi-emb').textContent = `R$ ${valorTotal.toFixed(2)}`;
-  document.getElementById('kpi-ticket').textContent = `R$ ${ticketMed.toFixed(2)}`;
+  // frete total do dia (motoboys cujo pedido está no conjunto filtrado)
+  const totalFrete = Object.entries(motoboyInfoMap).reduce((acc, [pid, info]) => {
+    const inPeriod = filteredSep.some(s => String(s.venda?.id ?? s.id ?? '') === pid)
+                  || filteredPed.some(p => String(p.id ?? p.numeroPedido ?? p.numero ?? '') === pid);
+    return inPeriod ? acc + parseNumber(info.valorFrete ?? 0) : acc;
+  }, 0);
+
+  document.getElementById('kpi-total').textContent  = total;
+  document.getElementById('kpi-pend').textContent   = abertos;
+  document.getElementById('kpi-sep').textContent    = andamento;
+  document.getElementById('kpi-separ').textContent  = atendidos;
   document.getElementById('kpi-atraso').textContent = atrasados;
+  document.getElementById('kpi-emb').textContent    = formatCurrency(valorTotal);
+  document.getElementById('kpi-ticket').textContent = formatCurrency(ticketMed);
+  document.getElementById('kpi-frete').textContent  = formatCurrency(totalFrete);
 
-  const horas = Array.from({ length: 14 }, (_, i) => `${(i + 7).toString().padStart(2, '0')}h`);
-  if (chartVendasDia) chartVendasDia.destroy();
-  chartVendasDia = new Chart(document.getElementById('chart-vendas-dia'), {
-    type: 'bar',
-    data: { labels, datasets: [{ label: 'Faturamento', data: vendasDia, backgroundColor: '#2e9fd8', borderRadius: 8, borderSkipped: false }] },
-    options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `R$ ${Number(ctx.raw).toFixed(2)}` } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => `R$ ${v}` } } }, responsive: true, maintainAspectRatio: false }
+  // ── Top 10 produtos (soma por descrição) ─────
+  // a listagem não traz itens; busca agregação real no backend (detalhe de cada separação do dia)
+  loadProdutosRanking(fmtDayISO(selectedDay));
+
+  // ── Frete por motoboy ─────────────────────────
+  const fretePorMotoboy = {};
+  Object.entries(motoboyInfoMap).forEach(([pid, info]) => {
+    if (!info.motoboy) return;
+    const inPeriod = filteredSep.some(s => String(s.venda?.id ?? s.id ?? '') === pid)
+                  || filteredPed.some(p => String(p.id ?? p.numeroPedido ?? p.numero ?? '') === pid);
+    if (!inPeriod) return;
+    fretePorMotoboy[info.motoboy] = (fretePorMotoboy[info.motoboy] || 0) + parseNumber(info.valorFrete ?? 0);
   });
 
-  if (chartTicketDia) chartTicketDia.destroy();
-  chartTicketDia = new Chart(document.getElementById('chart-ticket-dia'), {
-    type: 'line',
-    data: { labels, datasets: [{ label: 'Ticket médio', data: ticketDia.map(v => Number(v.toFixed(2))), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,.12)', tension: .3, fill: true, pointRadius: 4, pointBackgroundColor: '#22c55e' }] },
-    options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `R$ ${Number(ctx.raw).toFixed(2)}` } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => `R$ ${v}` } } }, responsive: true, maintainAspectRatio: false }
-  });
+  const mbNames  = Object.keys(fretePorMotoboy);
+  const mbFretes = mbNames.map(n => fretePorMotoboy[n]);
+  const mbColors = ['#2e9fd8','#7c3aed','#f59e0b','#22c55e','#ef4444','#0f766e','#b45309','#1a7aaa'];
 
-  if (chartHora) chartHora.destroy();
-  chartHora = new Chart(document.getElementById('chart-hora'), {
-    type: 'bar',
-    data: { labels: horas, datasets: [{ label: 'Vendas por hora', data: hourlySales, backgroundColor: '#f59e0b', borderRadius: 8, borderSkipped: false }] },
-    options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `R$ ${Number(ctx.raw).toFixed(2)}` } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => `R$ ${v}` } } }, responsive: true, maintainAspectRatio: false }
-  });
-
-  if (chartProdutos) chartProdutos.destroy();
-  chartProdutos = new Chart(document.getElementById('chart-produtos'), {
-    type: 'bar',
-    data: { labels: produtosTop.map(([name]) => name), datasets: [{ label: 'Quantidade vendida', data: produtosTop.map(([, qty]) => qty), backgroundColor: '#22c55e', borderRadius: 8, borderSkipped: false }] },
-    options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw}` } } }, scales: { y: { beginAtZero: true } }, responsive: true, maintainAspectRatio: false }
-  });
+  if (chartFreteMotoboy) chartFreteMotoboy.destroy();
+  const canvas = document.getElementById('chart-frete-motoboy');
+  chartFreteMotoboy = mbNames.length > 0
+    ? new Chart(canvas, {
+        type: 'bar',
+        data: { labels: mbNames, datasets: [{ label: 'Frete (R$)', data: mbFretes, backgroundColor: mbNames.map((_,i) => mbColors[i % mbColors.length]), borderRadius: 10, borderSkipped: false, maxBarThickness: 56 }] },
+        options: {
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => formatCurrency(ctx.raw) } } },
+          scales:  { y: { beginAtZero: true, ticks: { callback: v => `R$${Number(v).toFixed(0)}` } } },
+          responsive: true, maintainAspectRatio: false,
+        },
+      })
+    : null;
+  if (!mbNames.length && canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────
 setSelectedDay(new Date(today));
 navigateTo('dashboard');
 loadSeparacoes();
+
+// ── Dashboard motoboy filter listener ─────────────────────────────────
+document.getElementById('dash-motoboy-filter')?.addEventListener('change', e => {
+  dashMotoboy = e.target.value;
+  renderDashboard();
+});
+
