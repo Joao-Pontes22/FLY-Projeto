@@ -1,0 +1,17 @@
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+
+CLIENT_ID = os.getenv("CLIENT_ID")
+
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+
+REDIRECT_URI = os.getenv("REDIRECT_URI")
+
+AUTH_URL = os.getenv("AUTH_URL")
+
+TOKEN_URL = os.getenv("TOKEN_URL")
+
+API_URL = os.getenv("API_URL")
