@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# VS Code
+.vscode/
+
+# Tokens e credenciais
+token.json
+
+# Ambiente virtual
+venv/
+.venv/
+
+# Variáveis de ambiente
+config.py

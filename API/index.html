@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FLY Pedidos</title>
+  <link rel="stylesheet" href="style.css?v=6" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img src="Logo.jpeg" class="brand-logo" alt="FLY" />
+      <span class="brand-name">FLY <span>Pedidos</span></span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" data-page="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </a>
+      <a href="#" class="nav-item" data-page="separacao">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+        Separação
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="http://localhost:8000/login" class="btn-connect-side">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        Conectar Tiny
+      </a>
+    </div>
+  </aside>
+
+  <!-- ── Main wrapper ── -->
+  <div class="app-body">
+
+    <!-- ── Topbar ── -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="page-title" id="page-title">Dashboard</span>
+      </div>
+      <div class="topbar-controls">
+        <!-- Filtro de dia (separação) -->
+        <div class="day-filter" id="day-filter-wrap">
+          <button class="day-btn" id="day-prev">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="day-display">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <input type="text" id="day-input" class="day-input" maxlength="10" autocomplete="off" placeholder="dd/mm/aaaa" />
+          </div>
+          <button class="day-btn" id="day-next">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <button class="day-btn day-today" id="day-today">Hoje</button>
+          <div id="day-calendar" class="day-calendar hidden">
+            <div class="dfc-nav">
+              <button id="dfc-prev">‹</button>
+              <span id="dfc-label"></span>
+              <button id="dfc-next">›</button>
+            </div>
+            <div class="dfc-weekdays"><span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span></div>
+            <div id="dfc-days" class="dfc-days"></div>
+          </div>
+        </div>
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="search-input" class="search-input" placeholder="Buscar..." />
+        </div>
+        <button class="btn-refresh" id="btn-refresh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ══ PAGE: DASHBOARD ══ -->
+    <div id="page-dashboard" class="page active">
+      <div class="dash-kpis">
+        <div class="kpi-card">
+          <div class="kpi-label">Total de pedidos hoje</div>
+          <div class="kpi-value" id="kpi-total">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Abertos</div>
+          <div class="kpi-value warn" id="kpi-pend">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Em andamento</div>
+          <div class="kpi-value accent" id="kpi-sep">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Atendidos</div>
+          <div class="kpi-value ok" id="kpi-separ">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Faturamento</div>
+          <div class="kpi-value accent" id="kpi-emb">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Ticket médio</div>
+          <div class="kpi-value accent" id="kpi-ticket">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Atrasados</div>
+          <div class="kpi-value danger" id="kpi-atraso">—</div>
+        </div>
+      </div>
+
+      <div class="dash-charts">
+        <div class="chart-card chart-big">
+          <div class="chart-title">Faturamento por dia</div>
+          <div class="chart-wrap"><canvas id="chart-vendas-dia"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Ticket médio por dia</div>
+          <div class="chart-wrap"><canvas id="chart-ticket-dia"></canvas></div>
+        </div>
+        <div class="chart-card chart-big">
+          <div class="chart-title">Vendas por hora</div>
+          <div class="chart-wrap"><canvas id="chart-hora"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Produtos mais vendidos</div>
+          <div class="chart-wrap"><canvas id="chart-produtos"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: SEPARAÇÃO ══ -->
+    <div id="page-separacao" class="page">
+      <div class="stats-bar">
+        <div class="stat stat-btn active" data-sit="" id="stat-btn-all"><span class="stat-val" id="stat-total">—</span><span class="stat-lbl">Total</span></div>
+        <div class="stat-div"></div>
+        <div class="stat stat-btn" data-sit="1" id="stat-btn-1"><span class="stat-val warn" id="stat-pendente">—</span><span class="stat-lbl">Pendentes</span></div>
+        <div class="stat-div"></div>
+        <div class="stat stat-btn" data-sit="3" id="stat-btn-3"><span class="stat-val accent" id="stat-andamento">—</span><span class="stat-lbl">Em separação</span></div>
+        <div class="stat-div"></div>
+        <div class="stat stat-btn" data-sit="4" id="stat-btn-4"><span class="stat-val ok" id="stat-concluido">—</span><span class="stat-lbl">Separadas</span></div>
+        <div class="stat-div"></div>
+        <div class="stat stat-btn" data-sit="atrasado" id="stat-btn-atrasado"><span class="stat-val danger" id="stat-atrasado">—</span><span class="stat-lbl">Atrasados</span></div>
+      </div>
+
+      <div class="cards-area">
+        <div id="state-loading" class="state-msg"><div class="spinner"></div><p>Carregando pedidos...</p></div>
+        <div id="state-error" class="state-msg hidden">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" width="36" height="36"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <p id="error-msg">Erro. <a href="http://localhost:8000/login">Fazer login</a></p>
+        </div>
+        <div id="state-empty" class="state-msg hidden">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" width="36" height="36"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+          <p>Nenhum pedido encontrado para este dia.</p>
+        </div>
+        <div id="cards-grid" class="cards-grid hidden"></div>
+      </div>
+    </div>
+
+  </div><!-- /app-body -->
+
+  <!-- ── Modal overlay ── -->
+  <div id="drawer-overlay" class="modal-overlay hidden"></div>
+  <div id="detail-drawer" class="modal">
+    <div class="modal-header">
+      <span id="drawer-title">Detalhes</span>
+      <button id="drawer-action-btn" class="drawer-action-btn hidden" type="button"></button>
+      <button id="drawer-close" class="drawer-close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="drawer-body" class="modal-body"></div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+  <script src="app.js?v=16"></script>
+</body>
+</html>
