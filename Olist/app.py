@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from Olist.routes import auth, pedidos, produtos, expedicao, separacoes, motoboys
+from Olist.routes import auth, pedidos, produtos, expedicao, separacoes, motoboys, mcp
 
 app = FastAPI(title="Olist / Tiny API", version="1.0.0")
 
@@ -24,3 +24,4 @@ app.include_router(produtos.router)
 app.include_router(expedicao.router)
 app.include_router(separacoes.router)
 app.include_router(motoboys.router)
+app.include_router(mcp.router)

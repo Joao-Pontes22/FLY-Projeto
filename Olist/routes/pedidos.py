@@ -24,15 +24,26 @@ def listar_pedidos(limit: int = 100, offset: int = 0):
         },
     )
 
+    print("=" * 80)
+    print("STATUS:", response.status_code)
+    print("CONTENT-TYPE:", response.headers.get("Content-Type"))
+    print("URL:", response.url)
+    print("BODY:")
+    print(response.text)
+    print("=" * 80)
+
     dados = response.json()
 
     itens = dados.get("itens", [])
 
     itens = [
         p for p in itens
-        if not (p.get("ecommerce", {}).get("numeroPedidoEcommerce"))
+        if (p.get("ecommerce", {}).get("numeroPedidoEcommerce"))
     ]
-
+    print("STATUS:", response.status_code)
+    print("HEADERS:", response.headers.get("Content-Type"))
+    print("BODY:")
+    print(response.text[:1000])   # primeiros 1000 caracteres
     return itens
 
 

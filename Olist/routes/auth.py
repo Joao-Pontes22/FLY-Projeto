@@ -32,17 +32,16 @@ def callback(code: str):
         "code": code,
     }
 
-    response = requests.post(TOKEN_URL, data=data)
+    response = requests.post(TOKEN_URL, data=data, timeout=30)
     token = response.json()
 
     if "access_token" not in token:
         return {
             "erro": "Falha ao obter o token.",
             "status": response.status_code,
-            "resposta": token,
         }
 
     with open("token.json", "w", encoding="utf-8") as f:
         json.dump(token, f, indent=4, ensure_ascii=False)
 
-    return {"mensagem": "Token salvo com sucesso.", "token": token}
+    return {"mensagem": "Conta Olist conectada com sucesso."}
