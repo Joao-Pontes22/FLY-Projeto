@@ -174,11 +174,8 @@ def _payload_identificacao(produto, dados):
     embalagem = (produto.get("dimensoes") or {}).get("embalagem") or {}
     if embalagem.get("id"):
         payload.setdefault("dimensoes", {})["embalagem"] = {"id": embalagem["id"]}
-    if produto.get("fornecedores") is not None:
-        payload["fornecedores"] = [
-            {k: deepcopy(f[k]) for k in ("id", "codigoProdutoNoFornecedor", "padrao") if f.get(k) is not None}
-            for f in produto["fornecedores"]
-        ]
+    # GET omite fornecedores[].padrao, obrigatório ao reenviar a lista no PUT.
+    # Omitir o grupo evita inventar o fornecedor padrão ou editar essa associação.
     payload["sku"] = dados.novo_sku
     payload.setdefault("estoque", {})["localizacao"] = dados.localizacao
     return caminho, payload
@@ -257,7 +254,7 @@ def alterar_identificacao(dados: IdentificacaoProduto, produto_id: int = Path(..
     if atual.get("sku") != dados.novo_sku or (atual.get("estoque") or {}).get("localizacao", "") != dados.localizacao:
         return {"status": "divergencia", "alterado": None, **previa,
                 "aviso": "A consulta posterior diverge do solicitado. Confira o cadastro por ID; não repita automaticamente."}
-    preservados = ("descricao", "precos", "kit", "anexos", "produtoPai")
+    preservados = ("descricao", "precos", "kit", "anexos", "produtoPai", "fornecedores")
     divergencias = [k for k in preservados if atual.get(k) != produto.get(k)]
     for k, v in (produto.get("estoque") or {}).items():
         if k != "localizacao" and (atual.get("estoque") or {}).get(k) != v:
