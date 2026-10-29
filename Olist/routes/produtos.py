@@ -234,6 +234,15 @@ def alterar_identificacao(dados: IdentificacaoProduto, produto_id: int = Path(..
     except requests.RequestException:
         raise HTTPException(502, "Resultado incerto. Consulte o produto por ID antes de repetir; o PUT não será repetido automaticamente.") from None
     if not 200 <= resposta.status_code < 300:
+        if resposta.status_code == 400:
+            try:
+                erro = resposta.json()
+            except ValueError:
+                erro = {}
+            detalhes = erro.get("detalhes", []) if isinstance(erro, dict) else []
+            seguros = [{k: str(item[k])[:300] for k in ("campo", "mensagem") if k in item}
+                       for item in detalhes[:20] if isinstance(item, dict)] if isinstance(detalhes, list) else []
+            raise HTTPException(400, {"mensagem": "Olist rejeitou a edição do cadastro", "detalhes": seguros})
         mensagens = {400: "Olist rejeitou a edição do cadastro", 401: "Reconecte a conta FLY no Olist",
                      403: "Sem permissão para editar produtos", 404: "Produto ou variação não encontrado",
                      429: "Limite de requisições do Olist atingido"}
