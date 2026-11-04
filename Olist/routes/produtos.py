@@ -10,7 +10,7 @@ from Olist.security import require_connector
 from Olist.services.produtos import listar, obter, por_sku, consultar
 from Olist.utils.token import get_auth_headers
 
-router = APIRouter(prefix="/produtos", tags=["Produtos"], dependencies=[Depends(require_connector)])
+router = APIRouter(prefix="/produtos", tags=["Produtos"])
 NumeroNaoNegativo = Annotated[float, Field(strict=True, ge=0, allow_inf_nan=False)]
 
 
