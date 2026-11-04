@@ -262,3 +262,111 @@ def alterar_identificacao(dados: IdentificacaoProduto, produto_id: int = Path(..
     return {"status": "divergencia" if divergencias else "verificado", "alterado": True,
             "campos_divergentes": divergencias, **previa}
 
+
+
+# ---------------------------------------------------------------------------
+# Imagens / anexos por SKU
+# Olist v3: GET/POST /produtos/{idProduto}/anexos com [{"url": ..., "externo": bool}].
+# externo=false faz o Olist baixar a imagem e guardá-la como anexo do produto.
+# ---------------------------------------------------------------------------
+UrlImagem = Annotated[str, Field(strict=True, min_length=10, max_length=2000, pattern=r"^https?://\S+$")]
+
+
+class EnvioImagens(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    urls: Annotated[list[UrlImagem], Field(min_length=1, max_length=20)] = Field(
+        description="URLs públicas das imagens, na ordem desejada (a primeira deve ser a de fundo branco).")
+    externo: StrictBool = Field(False, description="false = Olist baixa e guarda como anexo; true = só referencia a URL.")
+    confirmar_alteracao: StrictBool = False
+
+
+def _base_url():
+    return (API_URL or "https://api.tiny.com.br/public-api/v3").rstrip("/")
+
+
+def _anexos_atuais(produto_id: int) -> list:
+    # consultar() só aceita objetos; este endpoint retorna uma lista.
+    try:
+        resposta = requests.get(f"{_base_url()}/produtos/{produto_id}/anexos",
+                                headers=get_auth_headers(), timeout=30, allow_redirects=False)
+    except requests.RequestException:
+        raise HTTPException(502, "Não foi possível consultar as imagens no Olist") from None
+    if resposta.status_code >= 400:
+        mensagens = {401: "Reconecte a conta FLY no Olist", 403: "Sem permissão para consultar produtos",
+                     404: "Produto não encontrado no Olist", 429: "Limite de consultas do Olist atingido"}
+        raise HTTPException(resposta.status_code if resposta.status_code in mensagens else 502,
+                            mensagens.get(resposta.status_code, "Falha ao consultar imagens no Olist"))
+    try:
+        dados = resposta.json()
+    except ValueError:
+        raise HTTPException(502, "Resposta inválida do Olist") from None
+    if isinstance(dados, dict) and isinstance(dados.get("itens"), list):
+        dados = dados["itens"]
+    if not isinstance(dados, list):
+        raise HTTPException(502, "Lista de imagens inválida")
+    return [{"id": a.get("id"), "url": a.get("url"), "externo": a.get("externo")} for a in dados if isinstance(a, dict)]
+
+
+@router.get("/por-sku/{codigo}/imagens", summary="Listar imagens/anexos do produto por SKU")
+def obter_imagens_por_sku(codigo: str):
+    produto = por_sku(codigo)
+    return {"produto_id": produto["produto_id"], "sku": produto["sku"], "descricao": produto["descricao"],
+            "imagens": _anexos_atuais(produto["produto_id"])}
+
+
+@router.post("/por-sku/{codigo}/imagens", summary="Prévia ou envio de imagens por SKU")
+def enviar_imagens_por_sku(codigo: str, dados: EnvioImagens):
+    """Prévia por padrão. Envie confirmar_alteracao=true para adicionar as imagens no Olist.
+    As imagens são ADICIONADAS às existentes; URLs já cadastradas são ignoradas."""
+    produto = por_sku(codigo)
+    produto_id = produto["produto_id"]
+    atuais = _anexos_atuais(produto_id)
+    existentes = {a["url"] for a in atuais if a.get("url")}
+
+    novas, ignoradas = [], []
+    for url in dados.urls:
+        (ignoradas if url in existentes or url in novas else novas).append(url)
+    payload = [{"url": url, "externo": dados.externo} for url in novas]
+
+    previa = {
+        "produto_id": produto_id, "sku": produto["sku"], "descricao": produto["descricao"],
+        "imagens_atuais": atuais, "urls_ignoradas": ignoradas, "payload_olist": payload,
+        "rota_olist": f"/produtos/{produto_id}/anexos",
+    }
+    if not payload:
+        return {"status": "sem_alteracao", "alterado": False, **previa,
+                "aviso": "Todas as URLs informadas já estão cadastradas no produto."}
+    if not dados.confirmar_alteracao:
+        return {"status": "previa", "alterado": False, **previa}
+
+    try:
+        resposta = requests.post(f"{_base_url()}/produtos/{produto_id}/anexos", headers=get_auth_headers(),
+                                 json=payload, timeout=60, allow_redirects=False)
+    except requests.RequestException:
+        # Timeout não prova falha; nunca repetir automaticamente para não duplicar imagens.
+        raise HTTPException(502, "Resultado incerto. Consulte GET /produtos/por-sku/{codigo}/imagens antes de repetir.") from None
+    if not 200 <= resposta.status_code < 300:
+        if resposta.status_code == 400:
+            try:
+                erro = resposta.json()
+            except ValueError:
+                erro = {}
+            detalhes = erro.get("detalhes", []) if isinstance(erro, dict) else []
+            seguros = [{k: str(item[k])[:300] for k in ("campo", "mensagem") if k in item}
+                       for item in detalhes[:20] if isinstance(item, dict)] if isinstance(detalhes, list) else []
+            raise HTTPException(400, {"mensagem": "Olist rejeitou as imagens; confira se as URLs são públicas e apontam para imagens",
+                                      "detalhes": seguros})
+        mensagens = {401: "Reconecte a conta FLY no Olist", 403: "Sem permissão para alterar produtos",
+                     404: "Produto não encontrado no Olist", 429: "Limite de requisições do Olist atingido"}
+        raise HTTPException(resposta.status_code if resposta.status_code in mensagens else 502,
+                            mensagens.get(resposta.status_code, "Olist não confirmou o envio. Consulte as imagens antes de repetir."))
+
+    retorno = {"status": "imagens_enviadas", "alterado": True, **previa}
+    try:
+        retorno["imagens_atuais_depois"] = _anexos_atuais(produto_id)
+        retorno["consulta_posterior"] = "concluida"
+    except HTTPException:
+        retorno["consulta_posterior"] = "pendente"
+        retorno["aviso"] = "Envio confirmado, mas a consulta posterior falhou. Não repita o POST; consulte as imagens."
+    return retorno
